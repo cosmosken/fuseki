@@ -35,23 +35,7 @@ package com.bu.dong.leetcode.link_list._21;
 // l1 和 l2 均按 非递减顺序 排列
 
 
-// Definition for singly-linked list.
-class ListNode {
-    int val;
-    ListNode next;
-
-    ListNode() {
-    }
-
-    ListNode(int val) {
-        this.val = val;
-    }
-
-    ListNode(int val, ListNode next) {
-        this.val = val;
-        this.next = next;
-    }
-}
+import com.bu.dong.leetcode.link_list.ListNode;
 
 class Solution {
     public ListNode mergeTwoLists(ListNode list1, ListNode list2) {
