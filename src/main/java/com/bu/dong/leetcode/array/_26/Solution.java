@@ -9,7 +9,7 @@ class Solution {
         while (fast < nums.length) {
             if (nums[fast] != nums[slow]) {
                 slow++;
-                // 维护 nums[0..slow] 无重复
+                // 维护 nums[0...slow] 无重复
                 nums[slow] = nums[fast];
             }
             fast++;
