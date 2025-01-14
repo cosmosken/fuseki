@@ -1,4 +1,4 @@
-package com.bu.dong.leetcode.array.string._5;
+package com.bu.dong.leetcode.string._5;
 
 public class Solution {
     String longestPalindrome(String s) {

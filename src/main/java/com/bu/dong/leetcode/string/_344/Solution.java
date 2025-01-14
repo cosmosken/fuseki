@@ -1,4 +1,4 @@
-package com.bu.dong.leetcode.array.string._344;
+package com.bu.dong.leetcode.string._344;
 
 class Solution {
     public void reverseString(char[] s) {

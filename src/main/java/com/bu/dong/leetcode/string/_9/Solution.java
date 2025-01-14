@@ -1,4 +1,4 @@
-package com.bu.dong.leetcode.array.string._9;
+package com.bu.dong.leetcode.string._9;
 
 class Solution {
     public boolean isPalindrome(int x) {
