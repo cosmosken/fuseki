@@ -1,4 +1,4 @@
-package com.bu.dong.leetcode.string.lcr_016;
+package com.bu.dong.leetcode.array.string.lcr_016;
 
 import java.util.HashSet;
 import java.util.Set;

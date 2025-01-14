@@ -1,4 +1,4 @@
-package com.bu.dong.leetcode.array._48;
+package com.bu.dong.leetcode.mock._48;
 
 class Solution {
     public void rotate(int[][] matrix) {
