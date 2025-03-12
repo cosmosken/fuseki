@@ -4,14 +4,13 @@ import lombok.Data;
 import org.jetbrains.annotations.NotNull;
 
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class CompletableFutureDemo {
-    //    private static final Logger Log = Logger.getLogger(CompletableFutureDemo.class);
-    private static final class Log {
+
+    // 自定义日志工具
+    private static class Log {
         static void info(String msg) {
             System.out.println("[INFO] " + msg);
         }
@@ -21,6 +20,7 @@ public class CompletableFutureDemo {
         }
     }
 
+    // 商品实体类
     @Data
     static class Product {
         private String id;
@@ -28,140 +28,121 @@ public class CompletableFutureDemo {
         private BigDecimal price;
         private int stock;
 
-        public Product(String id, String name) {
+        private Product(String id, String name) {
             this.id = id;
             this.name = name;
         }
 
-        @Override
-        public String toString() {
-            return String.format("Product{id='%s', name='%s', price=%s, stock=%d}", id, name, price, stock);
+        // 静态工厂方法
+        public static Product create(String id, String name) {
+            return new Product(id, name);
+        }
+
+        // 带详情的工厂方法
+        public static Product withDetails(String id, String name, BigDecimal price, int stock) {
+            Product p = new Product(id, name);
+            p.setPrice(price);
+            p.setStock(stock);
+            return p;
+        }
+
+        // 降级商品工厂
+        public static Product fallback(String id) {
+            return new Product(id, "[降级商品]");
         }
     }
 
-    // 自定义线程池（修复3: 调整拒绝策略为记录日志）
-    private static final ExecutorService executor = new ThreadPoolExecutor(
-            2, 5, 30, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(10),
+    // 线程池配置
+    private static final ExecutorService asyncExecutor = new ThreadPoolExecutor(
+            4, 8, 30, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(100),
             new ThreadFactory() {
-                private int count = 0;
+                private final AtomicInteger counter = new AtomicInteger(0);
 
                 @Override
                 public Thread newThread(@NotNull Runnable r) {
-                    return new Thread(r, "supplier-thread-" + count++);
+                    return new Thread(r, "async-pool-" + counter.getAndIncrement());
                 }
             },
-            (r, pool) -> Log.error("任务被拒绝，当前活跃线程：" + pool.getActiveCount())
+            (r, executor) -> Log.error("线程池满载拒绝任务，活跃线程数：" + executor.getActiveCount())
     );
 
-    // 供应商接口
-    interface SupplierService {
-        CompletableFuture<Product> getProduct(String productId);
-    }
-
-    static class SupplierA implements SupplierService {
-        @Override
-        public CompletableFuture<Product> getProduct(String productId) {
+    // 异步任务执行器
+    private static class AsyncTask {
+        public static CompletableFuture<Product> fetchProduct(String productId, long timeoutMs) {
             return CompletableFuture.supplyAsync(() -> {
-                Log.info("SupplierA 开始处理");
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) { /* 忽略中断 */ }
-                Product p = new Product(productId, "ProductA");
-                p.setPrice(new BigDecimal("100.00"));
-                p.setStock(10);
-                return p;
-            }, executor);
+                        Log.info("开始查询商品: " + productId);
+                        try {
+                            Thread.sleep(300); // 模拟网络延迟
+                            return Product.withDetails(productId, "iPhone15", new BigDecimal("6999.00"), 100);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
+                    }, asyncExecutor)
+                    .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .exceptionally(ex -> {
+                        Log.error("商品查询失败: " + ex.getMessage());
+                        return Product.fallback(productId);
+                    });
         }
-    }
 
-    static class SupplierB implements SupplierService {
-        @Override
-        public CompletableFuture<Product> getProduct(String productId) {
+        public static CompletableFuture<Integer> fetchStock(String productId, long timeoutMs) {
             return CompletableFuture.supplyAsync(() -> {
-                Log.info("SupplierB 开始处理");
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) { /* 忽略中断 */ }
-                Product p = new Product(productId, "ProductB");
-                p.setPrice(new BigDecimal("99.00"));
-                p.setStock(10);
-                return p;
-            }, executor);
-        }
-    }
-
-    static class SupplierC implements SupplierService {
-        @Override
-        public CompletableFuture<Product> getProduct(String productId) {
-            return CompletableFuture.supplyAsync(() -> {
-                Log.info("SupplierC 开始处理");
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) { /* 忽略中断 */ }
-                Product p = new Product(productId, "ProductC");
-                p.setPrice(new BigDecimal("98.00"));
-                p.setStock(10);
-                return p;
-            }, executor);
+                        Log.info("开始查询库存: " + productId);
+                        try {
+                            Thread.sleep(200); // 模拟数据库查询
+                            return 100;
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
+                    }, asyncExecutor)
+                    .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .exceptionally(ex -> {
+                        Log.error("库存查询失败: " + ex.getMessage());
+                        return 0; // 降级为0库存
+                    });
         }
     }
 
     public static void main(String[] args) {
-        SupplierService supplierA = new SupplierA();
-        SupplierService supplierB = new SupplierB();
-        SupplierService supplierC = new SupplierC();
+        // 并行执行三个异步任务
+        CompletableFuture<Product> productFuture = AsyncTask.fetchProduct("P1001", 500);
+        CompletableFuture<Integer> stockFuture = AsyncTask.fetchStock("P1001", 300);
+        CompletableFuture<BigDecimal> priceFuture = CompletableFuture.supplyAsync(() -> {
+            Log.info("开始计算促销价");
+            return new BigDecimal("6499.00");
+        }, asyncExecutor);
 
-        // 定义带超时和降级的任务
-        CompletableFuture<Product> futureA = supplierA.getProduct("P1001")
-                .orTimeout(1, TimeUnit.SECONDS)
-                .exceptionally(ex -> handleError("SupplierA", "P1001"));
-        CompletableFuture<Product> futureB = supplierB.getProduct("P1002")
-                .orTimeout(1, TimeUnit.SECONDS)
-                .exceptionally(ex -> handleError("SupplierB", "P1002"));
-        CompletableFuture<Product> futureC = supplierC.getProduct("P1003")
-                .orTimeout(2, TimeUnit.SECONDS)
-                .exceptionally(ex -> handleError("SupplierC", "P1003"));
+        // 聚合结果
+        CompletableFuture<Void> aggregateFuture = CompletableFuture.allOf(productFuture, stockFuture, priceFuture)
+                .thenRunAsync(() -> {
+                    Product product = productFuture.join();
+                    int stock = stockFuture.join();
+                    BigDecimal price = priceFuture.join();
 
-        // 非阻塞聚合结果
-        CompletableFuture<List<Product>> aggregateFuture = CompletableFuture.allOf(futureA, futureB, futureC)
-                .thenApply(v -> Stream.of(futureA, futureB, futureC)
-                        .map(f -> f.handle((res, ex) -> ex != null ? createFallbackProduct(ex) : res))
-                        .map(CompletableFuture::join)
-                        .collect(Collectors.toList())
-                );
+                    Log.info(String.format("聚合结果: %s | 库存: %d | 促销价: %s",
+                            product, stock, price));
+                }, asyncExecutor);
 
         try {
-            List<Product> products = aggregateFuture.get(4, TimeUnit.SECONDS); // 全局超时略大于单任务总和
-            Log.info("聚合结果: " + products);
+            // 全局超时控制
+            aggregateFuture.get(2, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            Log.error("全局聚合超时");
+            Log.error("全局任务超时");
         } catch (Exception e) {
-            Log.error("任务失败: " + e.getMessage());
+            Log.error("任务执行异常: " + e.getMessage());
         } finally {
-            executor.shutdown();
+            // 优雅关闭线程池
+            asyncExecutor.shutdown();
             try {
-                if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                    Log.error("线程池未完全关闭，强制终止");
-                    executor.shutdownNow();
+                if (!asyncExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+                    asyncExecutor.shutdownNow();
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }
-    }
-
-    private static Product handleError(String supplier, String productId) {
-        Log.error(supplier + " 任务失败，返回默认商品");
-        return new Product(productId, "默认商品");
-    }
-
-    // 降级商品生成方法
-    private static Product createFallbackProduct(Throwable ex) {
-        Log.error("降级逻辑触发，异常原因：" + ex.getMessage());
-        Product fallback = new Product("FALLBACK_001", "默认商品");
-        fallback.setPrice(new BigDecimal("0.00"));
-        fallback.setStock(0);
-        return fallback;
     }
 }
