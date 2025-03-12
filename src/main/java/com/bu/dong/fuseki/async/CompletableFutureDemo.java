@@ -33,13 +33,8 @@ public class CompletableFutureDemo {
             this.name = name;
         }
 
-        // 静态工厂方法
-        public static Product create(String id, String name) {
-            return new Product(id, name);
-        }
-
         // 带详情的工厂方法
-        public static Product withDetails(String id, String name, BigDecimal price, int stock) {
+        public static Product detail(String id, String name, BigDecimal price, int stock) {
             Product p = new Product(id, name);
             p.setPrice(price);
             p.setStock(stock);
@@ -74,13 +69,12 @@ public class CompletableFutureDemo {
                         Log.info("开始查询商品: " + productId);
                         try {
                             Thread.sleep(300); // 模拟网络延迟
-                            return Product.withDetails(productId, "iPhone15", new BigDecimal("6999.00"), 100);
+                            return Product.detail(productId, "iPhone15", new BigDecimal("6999.00"), 100);
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                             throw new RuntimeException(e);
                         }
-                    }, asyncExecutor)
-                    .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    }, asyncExecutor).orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                     .exceptionally(ex -> {
                         Log.error("商品查询失败: " + ex.getMessage());
                         return Product.fallback(productId);
@@ -104,34 +98,49 @@ public class CompletableFutureDemo {
                         return 0; // 降级为0库存
                     });
         }
+
+        public static CompletableFuture<BigDecimal> fetchPrice(String productId, long timeoutMs) {
+            return CompletableFuture.supplyAsync(() -> {
+                        Log.info("开始计算促销价: " + productId);
+                        try {
+                            Thread.sleep(200); // 模拟数据库查询
+                            return new BigDecimal("6499.00");
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
+                    }, asyncExecutor)
+                    .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .exceptionally(ex -> {
+                        Log.error("价格计算失败: " + ex.getMessage());
+                        return new BigDecimal("999.99"); // 降级为mock值
+                    });
+        }
     }
 
     public static void main(String[] args) {
         // 并行执行三个异步任务
         CompletableFuture<Product> productFuture = AsyncTask.fetchProduct("P1001", 500);
         CompletableFuture<Integer> stockFuture = AsyncTask.fetchStock("P1001", 300);
-        CompletableFuture<BigDecimal> priceFuture = CompletableFuture.supplyAsync(() -> {
-            Log.info("开始计算促销价");
-            return new BigDecimal("6499.00");
-        }, asyncExecutor);
+        CompletableFuture<BigDecimal> priceFuture = AsyncTask.fetchPrice("P1001", 300);
 
         // 聚合结果
         CompletableFuture<Void> aggregateFuture = CompletableFuture.allOf(productFuture, stockFuture, priceFuture)
                 .thenRunAsync(() -> {
                     Product product = productFuture.join();
-                    int stock = stockFuture.join();
+                    Integer stock = stockFuture.join();
                     BigDecimal price = priceFuture.join();
-
-                    Log.info(String.format("聚合结果: %s | 库存: %d | 促销价: %s",
-                            product, stock, price));
+                    Log.info(String.format("聚合结果: %s | 库存: %d | 促销价: %s", product, stock, price));
                 }, asyncExecutor);
 
         try {
             // 全局超时控制
             aggregateFuture.get(2, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
+        } catch (
+                TimeoutException e) {
             Log.error("全局任务超时");
-        } catch (Exception e) {
+        } catch (
+                Exception e) {
             Log.error("任务执行异常: " + e.getMessage());
         } finally {
             // 优雅关闭线程池
