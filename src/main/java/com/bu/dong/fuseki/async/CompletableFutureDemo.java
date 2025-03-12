@@ -4,9 +4,10 @@ import lombok.Data;
 import org.jetbrains.annotations.NotNull;
 
 import java.math.BigDecimal;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class CompletableFutureDemo {
     //    private static final Logger Log = Logger.getLogger(CompletableFutureDemo.class);
@@ -110,22 +111,57 @@ public class CompletableFutureDemo {
         SupplierService supplierA = new SupplierA();
         SupplierService supplierB = new SupplierB();
         SupplierService supplierC = new SupplierC();
-        CompletableFuture<Product> featureA = supplierA.getProduct("P1001").orTimeout(1, TimeUnit.SECONDS);
-        CompletableFuture<Product> featureB = supplierB.getProduct("P1002").orTimeout(1, TimeUnit.SECONDS);
-        CompletableFuture<Product> featureC = supplierC.getProduct("P1003").orTimeout(1, TimeUnit.SECONDS);
 
-        // 聚合任务到线程池
-        CompletableFuture<List<Product>> aggregateFuture = CompletableFuture.allOf(featureA, featureB, featureC)
-                .thenApply(v -> Arrays.asList(featureA.join(), featureB.join(), featureC.join()));
+        // 定义带超时和降级的任务
+        CompletableFuture<Product> futureA = supplierA.getProduct("P1001")
+                .orTimeout(1, TimeUnit.SECONDS)
+                .exceptionally(ex -> handleError("SupplierA", "P1001"));
+        CompletableFuture<Product> futureB = supplierB.getProduct("P1002")
+                .orTimeout(1, TimeUnit.SECONDS)
+                .exceptionally(ex -> handleError("SupplierB", "P1002"));
+        CompletableFuture<Product> futureC = supplierC.getProduct("P1003")
+                .orTimeout(2, TimeUnit.SECONDS)
+                .exceptionally(ex -> handleError("SupplierC", "P1003"));
+
+        // 非阻塞聚合结果
+        CompletableFuture<List<Product>> aggregateFuture = CompletableFuture.allOf(futureA, futureB, futureC)
+                .thenApply(v -> Stream.of(futureA, futureB, futureC)
+                        .map(f -> f.handle((res, ex) -> ex != null ? createFallbackProduct(ex) : res))
+                        .map(CompletableFuture::join)
+                        .collect(Collectors.toList())
+                );
+
         try {
-            List<Product> products = aggregateFuture.get(3, TimeUnit.SECONDS);
+            List<Product> products = aggregateFuture.get(4, TimeUnit.SECONDS); // 全局超时略大于单任务总和
             Log.info("聚合结果: " + products);
         } catch (TimeoutException e) {
-            Log.error("任务超时");
+            Log.error("全局聚合超时");
         } catch (Exception e) {
             Log.error("任务失败: " + e.getMessage());
         } finally {
             executor.shutdown();
+            try {
+                if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    Log.error("线程池未完全关闭，强制终止");
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
+    }
+
+    private static Product handleError(String supplier, String productId) {
+        Log.error(supplier + " 任务失败，返回默认商品");
+        return new Product(productId, "默认商品");
+    }
+
+    // 降级商品生成方法
+    private static Product createFallbackProduct(Throwable ex) {
+        Log.error("降级逻辑触发，异常原因：" + ex.getMessage());
+        Product fallback = new Product("FALLBACK_001", "默认商品");
+        fallback.setPrice(new BigDecimal("0.00"));
+        fallback.setStock(0);
+        return fallback;
     }
 }
