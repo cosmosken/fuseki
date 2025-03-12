@@ -55,7 +55,7 @@ public class CompletableFutureDemo {
     // 线程池配置
     private static final ExecutorService asyncExecutor = new ThreadPoolExecutor(
             4, 8, 30, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(100),
+            new ArrayBlockingQueue<>(100),
             new ThreadFactory() {
                 private final AtomicInteger counter = new AtomicInteger(0);
 
