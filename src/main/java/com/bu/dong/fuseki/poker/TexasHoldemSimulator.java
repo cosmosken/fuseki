@@ -2,36 +2,36 @@ package com.bu.dong.fuseki.poker;
 
 import java.util.*;
 
-// 扑克牌实体类（支持花色与点数解析）
-class Card {
-    String rank;  // 2-10,J,Q,K,A
-    String suit;  // s,h,d,c
-
-    public Card(String code) {  // 构造函数（如"Ah"表示红心A）
-        this.rank = code.substring(0, code.length() - 1);
-        this.suit = code.substring(code.length() - 1);
-    }
-}
-
-// 玩家实体类（含手牌与胜率统计）
-class Player {
-    int id;
-    Card[] hand = new Card[2];
-    int wins = 0;
-
-    public Player(int id, Card card1, Card card2) {
-        this.id = id;
-        hand[0] = card1;
-        hand[1] = card2;
-    }
-}
-
 // 主计算引擎
 public class TexasHoldemSimulator {
     private List<Card> deck;
-    private List<Player> players;
-    private List<Card> communityCards;
-    private int simulations = 100000;  // 默认10万次模拟
+    private final List<Player> players;
+    private final List<Card> communityCards;
+    private final int simulations = 1000000;  // 默认10万次模拟
+
+    // 扑克牌实体类（支持花色与点数解析）
+    private static class Card {
+        String rank;
+        String suit;
+
+        public Card(String code) {  // 构造函数（如"Ah"表示红心A）
+            this.rank = code.substring(0, code.length() - 1);
+            this.suit = code.substring(code.length() - 1);
+        }
+    }
+
+    // 玩家实体类（含手牌与胜率统计）
+    private static class Player {
+        int id;
+        Card[] hand = new Card[2];
+        int wins = 0;
+
+        public Player(int id, Card card1, Card card2) {
+            this.id = id;
+            hand[0] = card1;
+            hand[1] = card2;
+        }
+    }
 
     public TexasHoldemSimulator(List<Player> players, List<Card> communityCards) {
         initializeDeck(players, communityCards);
@@ -85,7 +85,7 @@ public class TexasHoldemSimulator {
 
         for (Player p : players) {
             if (scores.get(p) == maxScore) {
-                p.wins += (winners > 1) ? 0.5 : 1;  // 处理平局
+                p.wins += (winners > 1) ? 0 : 1;  // 处理平局
             }
         }
     }
@@ -169,9 +169,7 @@ public class TexasHoldemSimulator {
         Player p1 = new Player(1, new Card("Ks"), new Card("Kd"));  // 玩家1手牌
         Player p2 = new Player(2, new Card("Ah"), new Card("Qh"));  // 玩家2手牌
         Player p3 = new Player(3, new Card("Js"), new Card("3s"));  // 玩家3手牌
-        List<Card> community = Arrays.asList(
-                new Card("Ac"), new Card("Qs"), new Card("3d")  // 公共牌
-        );
+        List<Card> community = Collections.emptyList();
 
         TexasHoldemSimulator simulator = new TexasHoldemSimulator(
                 Arrays.asList(p1, p2, p3), community
